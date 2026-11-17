@@ -1,84 +1,95 @@
 # xdrtool 0.1.0
 
-CLI tamper/bypass tool for **Cortex XDR** in laboratory environments and
-authorized audits. Local-first, no network, no telemetry.
+Herramienta CLI de tamper/bypass de **Cortex XDR** para entornos de
+laboratorio y auditorías autorizadas. Local-first, sin red, sin telemetría.
 
-> Use only on systems you own or with written authorization. The author is not
-> responsible for misuse.
+> Uso exclusivo en sistemas propios o con autorización escrita. El autor no
+> se responsabiliza del mal uso.
 
-## What it does
+## Qué hace
 
-- **Reconnaissance** of the agent and its artifacts without privileges.
-- **Sabotage** of agent startup by changing the `ServiceDll` value of
-  `CryptSvc` to a nonexistent name (requires a reboot).
-- **Clean control** via `cytool.exe` using the factory password.
-- **Offline dump and cracking** of the agent password from the `.ldb` files in
-  `agent_settings.db`.
-- **Automatic chain** (`auto`): recon → cytool → dump → crack → sabotage.
-  With `--dry-run`, `cytool` and `sabotage` are skipped (only what would be
-  done is announced); the crack step **still runs** because it is read-only.
-- **Optional persistence** (`--persist N` in `sabotage` or `auto`) that
-  reapplies the sabotage every N seconds (minimum 5) if the agent reverts it.
+- **Reconocimiento** del agente y sus artefactos sin privilegios (`recon`).
+- **Sabotaje** del arranque del agente cambiando `ServiceDll` de `CryptSvc`
+  a un nombre inexistente (requiere reinicio).
+- **Control limpio** vía `cytool.exe` con la contraseña de fábrica.
+- **Volcado y crackeo** offline de la contraseña del agente a partir de los
+  `.ldb` de `agent_settings.db`.
+- **Cadena automática** (`auto`): `cytool` → `dumphash` + `crack` →
+  `sabotage`. Con `--dry-run`, `cytool` y `sabotage` se omiten (solo se
+  anuncia lo que se haría); el paso de volcado y crackeo **sí se ejecuta**
+  porque es de solo lectura. `auto` no ejecuta un `recon` separado: la
+  comprobación de que el agente está instalado es interna.
+- **Persistencia opcional** (`--persist N` en `sabotage` o `auto`) que
+  re-aplica el sabotaje cada N segundos (mínimo 5) si el agente lo revierte.
 
-## Techniques and requirements
+## Técnicas y requisitos
 
-| Technique            | Privileges  | Restart     | Leaves traces                                                         |
-| -------------------- | ----------- | ----------- | --------------------------------------------------------------------- |
-| `recon`              | user        | no          | no                                                                    |
-| `cytool`             | admin       | no          | no (cytool itself may log)                                            |
-| `sabotage`           | admin       | yes         | `ServiceDll` (+ `%ProgramData%\xdrkill` if an original value existed) |
-| `sabotage --restore` | admin       | yes         | removes the managed backup (if present)                               |
-| `dumphash`           | user        | no          | no                                                                    |
-| `crack`              | user        | no          | no                                                                    |
-| `auto`               | per substep | per substep | per substep                                                           |
+| Técnica              | Privilegios   | Reinicio | Deja rastro                                                       |
+|----------------------|---------------|----------|-------------------------------------------------------------------|
+| `recon`              | usuario       | no       | no                                                                |
+| `cytool`             | admin         | no       | no (el propio cytool puede loguear)                               |
+| `sabotage`           | admin         | sí       | `ServiceDll` (+ `%ProgramData%\xdrkill` si había valor original)  |
+| `sabotage --restore` | admin         | sí       | elimina el backup gestionado (si existe)                          |
+| `dumphash`           | usuario       | no       | no                                                                |
+| `crack`              | usuario       | no       | no                                                                |
+| `auto`               | según subpaso | según    | según subpaso                                                     |
 
-The "Restart" column indicates when the change **takes effect**; the registry
-value is written/restored immediately.
+La columna "Reinicio" indica cuándo el cambio **surte efecto**; el valor del
+registro se escribe/restaura de inmediato.
 
-## Build
+## Compilación
 
-Requires stable Rust and a Windows target (MSVC or GNU). At runtime there is no
-network access; the build downloads dependencies once.
+Requiere Rust estable y target Windows (MSVC o GNU). En tiempo de ejecución
+no hay red; el build sí descarga las dependencias una vez.
 
-```text
+```powershell
 cargo build --release
 ```
 
-For a reproducible build (locks dependency resolution with `Cargo.lock` and
-compares SHA-256 between two clean builds):
+`Cargo.lock` está versionado, así que un checkout limpio se compila de forma
+reproducible con:
 
-```text
-cargo generate-lockfile          # only the first time, if Cargo.lock is absent
+```powershell
 cargo build --release --locked
 ```
 
-The verification script does this for you and also compares two builds:
+Para verificar la reproducibilidad **en esta máquina** (dos builds limpios +
+comparación de SHA-256):
 
 ```powershell
 powershell -File .\build.ps1
 ```
 
-If the SHA-256 of the two binaries differs, `build.ps1` exits with code 1.
+Debe terminar con `REPRODUCIBLE OK`. Si los hashes difieren, el script sale
+con código 1 e imprime ambos.
 
-> Note: the binary is named `xdrtool.exe` (the crate name). Some examples from
-> earlier design phases said `xdrkill`; the actual name is `xdrtool`.
+**Límite de la reproducibilidad.** `--remap-path-prefix=/=//` en
+`.cargo/config.toml` no casa con rutas Windows (`C:\...`), así que es un
+no-op en esta plataforma. Consecuencias:
 
-## Usage
+- **Misma máquina, dos builds limpios** → mismos paths absolutos embebidos →
+  mismo SHA-256 → el DoD se cumple.
+- **Otra máquina o usuario** → paths distintos → binarios distintos aunque
+  el código sea idéntico. Para reproducibilidad cross-machine habría que
+  usar `--remap-path-prefix=C:\Users\TuUsuario\=//` (o el `$PWD` real del
+  proyecto). No se hace por defecto para no romper el contrato de la fase 0.
 
-```text
-xdrtool [--json] <COMMAND> [ARGS]
+## Uso
+
+```
+xdrtool [--json] <COMANDO> [ARGS]
 
   recon
-  sabotage [--restore] [--dll <name>] [--persist <sec>]
-  cytool <action> [-p <pw>] [--enable]
-  dumphash [--out <path>]
-  crack --hash <b64> --salt <b64> [--iterations <n>] [--wordlist <path>]
-  auto [--dry-run] [--dll <name>] [--wordlist <path>] [--persist <sec>]
+  sabotage [--restore] [--dll <nombre>] [--persist <seg>]
+  cytool <acción> [-p <pw>] [--enable]
+  dumphash [--out <ruta>]
+  crack --hash <b64> --salt <b64> [--iterations <n>] [--wordlist <ruta>]
+  auto [--dry-run] [--dll <nombre>] [--wordlist <ruta>] [--persist <seg>]
 ```
 
-Exit codes: `0` ok, `1` usage, `2` not admin, `3` not detected, `4` failure.
+Códigos de salida: `0` ok, `1` uso, `2` sin admin, `3` no detectado, `4` fallo.
 
-Examples:
+Ejemplos:
 
 ```powershell
 .\xdrtool.exe recon
@@ -92,60 +103,54 @@ Examples:
 .\xdrtool.exe auto --wordlist rockyou.txt --persist 30
 ```
 
-In `--json` mode, subcommands emit a single object on stdout and human-readable
-messages go to stderr, so `ConvertFrom-Json` validates without noise.
+En modo `--json` los subcomandos emiten un único objeto por stdout y los
+mensajes humanos van por stderr, de modo que `ConvertFrom-Json` valida sin
+ruido.
+
+`--restore` solo aplica a `sabotage`. En `auto` se ignora silenciosamente
+(igual que `--dll`/`--persist` se ignoran en subcomandos que no los usan).
+`--persist` requiere administrador: sin admin, el bucle se omite con aviso.
 
 ## Fixtures
 
-`fixtures/agent_settings.db` is a text file in the minimal format that
-`hashdump` scans: two `{"PasswordHash":"…","PasswordSalt":"…"}` objects. It
-contains no real data; the base64 values are synthetic except for the first
-pair, which is the vector from the article (password `Password1`).
+`fixtures/agent_settings.db` es un fichero de texto con el formato mínimo que
+`hashdump` escanea: dos objetos `{"PasswordHash":"…","PasswordSalt":"…"}`, uno
+por línea. No contiene datos reales; los base64 son sintéticos salvo el primer
+par, que es el vector del artículo (password `Password1`, iteraciones 11112).
 
-To generate it in PowerShell from the repository root:
+Está versionado. Los tests lo usan directamente:
 
-```powershell
-New-Item -ItemType Directory -Force -Path fixtures | Out-Null
-$text = @'
-{"PasswordHash":"LCeLXnrGjjf85UYWhm1dHK4NhPiCMmtcfVBYbT9RuQ5nMNl0EL211UF9xhlU+kERNRo5Ty9XQXgZ0G6XPIM0Bw==","PasswordSalt":"MjEzN3EwcWVuc2hxNmtvdjAya3lq"}
-{"PasswordHash":"U0VDT05ESEFTSDJTRUNPTkRIQVNIMlNFQ09OREhBU0gyU0VDT05ESEFTSDJTRUNPTkRIQVNIMg==","PasswordSalt":"U0VDT05EU0FMVA=="}
-'@
-[System.IO.File]::WriteAllText("fixtures\agent_settings.db", $text)
-```
+- `extract_fixture_dir_when_present` valida que salen al menos 2 pares del
+  fichero real (`env!("CARGO_MANIFEST_DIR")/fixtures/agent_settings.db`).
+- `extract_inline_two_pairs` usa los mismos bytes inline en `%TEMP%` para que
+  `cargo test` siga siendo verde incluso si alguien borra el fixture.
 
-The `extract_fixture_dir_when_present` test uses that file if it exists and
-skips with a warning if it is missing. The `extract_inline_two_pairs` test
-uses the same bytes inline in `%TEMP%` and **always** passes, so `cargo test`
-is green on a clean checkout.
+## Qué NO hace
 
-## What it does NOT do
+- **No evita el EDR en memoria**. Si `CryptSvc` ya cargó la DLL del agente,
+  el proceso sigue activo hasta el próximo reinicio.
+- **No rompe una contraseña fuera del diccionario interno** ni de la wordlist
+  que le pases. Si el agente cambió la contraseña a algo no listado, `crack`
+  falla; el resto de subcomandos siguen funcionando.
+- **No actúa sin reinicio** en el sabotaje: el registro se modifica ya, pero
+  `CryptSvc` solo relee `ServiceDll` al arrancar.
+- **No habla por red**: todo el crackeo y el escaneo son locales.
+- **No es sigiloso** por diseño: deja `%ProgramData%\xdrkill\cryptsvc.bak`
+  (cuando había valor original) y modifica el registro. Ver `docs/opsec.md`.
 
-- **It does not evade the EDR in memory.** If `CryptSvc` has already loaded the
-  agent DLL, the process remains active until the next reboot.
-- **It does not crack a password outside the internal dictionary** or the
-  wordlist you provide. If the agent changed the password to an unlisted value,
-  `crack` fails; the other subcommands still work.
-- **It does not take effect without a reboot** for sabotage: the registry is
-  modified immediately, but `CryptSvc` only rereads `ServiceDll` at startup.
-- **It does not communicate over the network**: all cracking and scanning are
-  local.
-- **It is not stealthy by design**: it leaves
-  `%ProgramData%\xdrkill\cryptsvc.bak` (when an original value existed) and
-  modifies the registry. See `docs/opsec.md`.
+## Dependencias y por qué
 
-## Dependencies and rationale
+| Crate              | Uso concreto                                                                                                                      |
+|--------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `windows-sys` 0.59 | Registry (`RegOpenKeyExW`/`RegQueryValueExW`/`RegSetValueExW`/`RegDeleteValueW`) y `BCryptGenRandom`.                             |
+| `pbkdf2` 0.12      | Derivación PBKDF2-HMAC-SHA512 (feature `hmac`).                                                                                   |
+| `sha2` 0.10        | SHA-512 como PRF de PBKDF2.                                                                                                       |
+| `base64` 0.22      | Codificar/decodificar hashes y salts (formato del agente).                                                                        |
 
-| Crate              | Specific use                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `windows-sys` 0.59 | Registry (`RegOpenKeyExW`/`RegQueryValueExW`/`RegSetValueExW`/`RegDeleteValueW`) and `BCryptGenRandom`. |
-| `pbkdf2` 0.12      | PBKDF2-HMAC-SHA512 derivation (feature `hmac`).                                                         |
-| `sha2` 0.10        | SHA-512 as the PBKDF2 PRF.                                                                              |
-| `base64` 0.22      | Encode/decode hashes and salts (agent format).                                                          |
+Sin `serde`, `anyhow`, `thiserror`, `clap`, `log`, `rand`, `chrono`. La salida
+JSON se serializa a mano y los errores son `u32` de Win32 o `String`. La
+comparación del hash se hace en tiempo constante (`ct_eq`).
 
-No `serde`, `anyhow`, `thiserror`, `clap`, `log`, `rand`, or `chrono`. JSON
-output is serialized by hand and errors are Win32 `u32` values or `String`.
-Hash comparison is constant-time (`ct_eq`).
+## Licencia
 
-## License
-
-GPL-3.0-or-later. See `LICENSE`.
+GPL-3.0-or-later. Ver `LICENSE`.

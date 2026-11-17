@@ -2,7 +2,6 @@
 //! ficheros `agent_settings.db` (dump de "Generate Support File").
 //! Escaneo en crudo, sin binarios externos.
 
-use crate::crack;
 use crate::sys;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::path::PathBuf;
@@ -33,7 +32,7 @@ pub fn extract(path: &PathBuf) -> Vec<Pair> {
     let salts = collect(&data, b"\"PasswordSalt\":\"");
     hashes
         .into_iter()
-        .zip(salts.into_iter())
+        .zip(salts)
         .map(|(hash_b64, salt_b64)| Pair {
             hash_b64,
             salt_b64,
@@ -101,9 +100,9 @@ pub fn debug_hex(p: &Pair) -> String {
 mod tests {
     use super::*;
 
-    // Fixture inline: dos pares sintéticos, mismos bytes que la sección
-    // "Fixtures" del README. Escrito a temp en el test para no depender de
-    // un fichero en el árbol de fuentes.
+    // Fixture inline: dos pares sintéticos, mismos bytes que fixtures/
+    // agent_settings.db (README § Fixtures). Escrito a temp en el test para
+    // que no dependa de un fichero en el árbol de fuentes.
     const FIXTURE_INLINE: &[u8] = concat!(
         r#"{"PasswordHash":"LCeLXnrGjjf85UYWhm1dHK4NhPiCMmtcfVBYbT9RuQ5nMNl0EL211UF9xhlU+kERNRo5Ty9XQXgZ0G6XPIM0Bw==","PasswordSalt":"MjEzN3EwcWVuc2hxNmtvdjAya3lq"}"#,
         "\n",

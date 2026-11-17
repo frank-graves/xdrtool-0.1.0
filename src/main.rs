@@ -433,14 +433,8 @@ fn cytool(action: cli::Action, enable: bool, password: &str, quiet: bool) -> u8 
         }
     }
 
-    let out_text = match out_thread.join() {
-        Ok(s) => s,
-        Err(_) => String::new(),
-    };
-    let err_text = match err_thread.join() {
-        Ok(s) => s,
-        Err(_) => String::new(),
-    };
+    let out_text: String = out_thread.join().unwrap_or_default();
+    let err_text: String = err_thread.join().unwrap_or_default();
 
     let code_i32: i32 = status_opt.as_ref().and_then(|s| s.code()).unwrap_or(-1);
     let success = !timed_out
@@ -666,7 +660,7 @@ fn auto_inner(password: &str, dll: Option<&str>, wordlist: Option<PathBuf>, dry:
     }
 
     let mut overall: u8 = 0;
-    let mut bump = |c: u8, o: &mut u8| {
+    let bump = |c: u8, o: &mut u8| {
         if *o == 0 && c != 0 {
             *o = c;
         }

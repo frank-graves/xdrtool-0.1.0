@@ -15,9 +15,10 @@ pub fn wide(s: &str) -> Vec<u16> {
 /// Interpreta `buf` como UTF-16LE, corta en el primer NUL y devuelve String.
 /// Descarta un byte sobrante si la longitud es impar.
 pub fn from_wide(buf: &[u8]) -> String {
-    let mut units: Vec<u16> = Vec::with_capacity(buf.len() / 2);
-    for c in buf.chunks_exact(2) {
-        let u = u16::from_le_bytes([c[0], c[1]]);
+    let (chunks, _rem) = buf.as_chunks::<2>();
+    let mut units: Vec<u16> = Vec::with_capacity(chunks.len());
+    for c in chunks {
+        let u = u16::from_le_bytes(*c);
         if u == 0 {
             break;
         }
@@ -130,7 +131,7 @@ pub fn to_hex(b: &[u8]) -> String {
 /// Decodifica hex; `None` si la longitud es impar o hay caracteres no hex.
 pub fn from_hex(s: &str) -> Option<Vec<u8>> {
     let bytes = s.as_bytes();
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return None;
     }
     let mut out = Vec::with_capacity(bytes.len() / 2);
