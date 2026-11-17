@@ -1,4 +1,4 @@
-# xdrtool 0.1.0
+# xdrtool 0.1.1
 
 Herramienta CLI de tamper/bypass de **Cortex XDR** para entornos de
 laboratorio y auditorías autorizadas. Local-first, sin red, sin telemetría.
